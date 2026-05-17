@@ -1,0 +1,11 @@
+# Approach
+
+The service is a stateless FastAPI conversational recommender over the live SHL JSON catalog. On startup and on demand, it fetches the exposed catalog URL, normalizes product names, descriptions, keys, languages, job levels, durations, and links, and keeps the result in memory with a refresh window. Recommendations are always resolved from this live catalog, so returned names and URLs come only from SHL data.
+
+The agent uses a hybrid design. A deterministic dialogue policy handles schema safety, refusals, comparison formatting, and catalog-only recommendation assembly. Optionally, when `GROQ_API_KEY` is configured, Groq `qwen/qwen3-32b` is used as a lightweight intent extractor over the stateless message history. It outputs only structured intent fields such as current need, positive terms, negative terms, comparison terms, and action. The LLM never writes final recommendations or URLs; those are still resolved from the live SHL catalog. If the LLM call fails or no key is configured, the deterministic path is used.
+
+Retrieval combines LLM-normalized intent, trace-informed routing, and lexical catalog ranking. The public traces reveal important target behaviors: ask clarifying questions for underspecified roles, honor language constraints, preserve and update shortlists across turns, compare catalog products using grounded fields, and refuse legal advice. The implementation encodes those behaviors while still falling back to lexical search over the full live catalog for unseen roles and skills.
+
+The response schema is fixed by Pydantic models: `reply`, `recommendations`, and `end_of_conversation`. Recommendations are empty while clarifying or refusing, and contain 1-10 items once the agent commits to a shortlist. Each recommendation includes only `name`, `url`, and `test_type`, where `test_type` is derived from the SHL catalog keys.
+
+What did not work well: a pure generic keyword search over the catalog over-recommended near-duplicate tests and missed conversational edits such as "scratch Java, use Python instead." A pure LLM plan would risk hallucinated URLs. The final design uses the LLM only for intent parsing, then deterministic policy and catalog retrieval for grounded recommendations.
